@@ -25,9 +25,9 @@ Single-file concatenation of Shakespeare's works, ~1.1M characters. A simple cha
 
 Shared architecture choices:
 - Pre-norm transformer blocks: `x + MHSA(LN(x))` then `x + FFN(LN(x))`
-- FFN: `Linear(d, 4d) → GELU → Linear(4d, d)`, no bias
+- FFN: `Linear(d, 4d) → GLU → Linear(2d, d)`, no bias (GLU halves the hidden dim from `4d` to `2d`)
 - Q/K/V/O projections: no bias
-- Custom `LayerNormalization` (not `nn.LayerNorm`), eps `1e-5`
+- Custom `LayerNormalization`, `Linear`, `SoftMax`, and `CrossEntropy` — no `nn.LayerNorm` / `nn.Linear` / `F.softmax` / `F.cross_entropy`
 - Optimizer: AdamW, lr `3e-4`, betas `(0.9, 0.95)`, eps `1e-8`
 - Device: Apple MPS
 
@@ -48,7 +48,7 @@ Shared architecture choices:
 
 Patches are formed via `unfold` on H and W, flattened to `(B, T, C·P·P)`, and linearly projected to `model_dim`. A learnable CLS token is prepended, and a learnable position embedding of length `num_patches + 1` is added. Classification uses the final CLS hidden state through a linear head.
 
-Result on held-out CIFAR-10 test set: **val loss 1.206, val accuracy 56.7%**.
+Result on held-out CIFAR-10 test set: **val loss 2.575, val accuracy 54.3%** (training loss drops to ~0.2, so the model is clearly overfitting with no regularization).
 
 ### GPT (Tiny Shakespeare)
 
