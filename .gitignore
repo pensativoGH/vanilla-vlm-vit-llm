@@ -1,0 +1,4 @@
+char-rnn/
+data/
+outputs/
+__pycache__/

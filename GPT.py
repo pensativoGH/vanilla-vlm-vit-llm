@@ -6,6 +6,7 @@ import math
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Tuple
+import json
 
 import numpy as np
 import torch
@@ -13,6 +14,9 @@ import torch.nn as nn
 from torch import Tensor
 from torch.utils.data import DataLoader, Dataset
 from transformers import AutoTokenizer
+from torch.optim import Optimizer
+from torch.optim.lr_scheduler import LRScheduler
+from torch.optim.lr_scheduler import LinearLR, CosineAnnealingLR, SequentialLR
 
 
 class LayerNormalization(nn.Module):
@@ -214,6 +218,8 @@ class ConfigParametersLLM:
     """GPT hyperparameters used in the notebook."""
 
     vocab_size: int
+    output_dir: str
+    data_path: str
     device: str | torch.device
     max_seq_length: int = 512
     model_dim: int = 768
@@ -221,15 +227,47 @@ class ConfigParametersLLM:
     chunk_size: int = 256
     batch_size: int = 16
     num_blocks: int = 2
+   
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "ConfigParametersLLM":
+        return cls(**data)
+    
+    @classmethod
+    def from_json(cls, path: str) -> "ConfigParametersLLM":
+        with open(path, "r") as f:
+            return cls.from_dict(json.load(f))
 
 
 @dataclass
 class OptimParameters:
-    """AdamW configuration."""
+    """AdamW and LR scheduler configuration."""
 
     lr: float = 3e-4
     betas: Tuple[float, float] = (0.9, 0.95)
-    eps: float = 1e-8
+    eps: float = 1e-8                                                                                                                                                               
+    min_lr: float = 3e-5                                                                                                                                                                   
+    warmup_steps: int = 500                                                                                                                                                                   
+    max_steps: int = 10000
+    scheduler: bool | None = None
+    compile: bool | None = None
+    autocast: bool | None = None
+    autocast_dtype: torch.dtype | None = None
+
+    def __post_init__(self):
+        if self.autocast is not None:
+            if self.autocast_dtype is None:
+                self.autocast_dtype = torch.bfloat16
+    
+    @classmethod
+    def from_dict(cls, data: dict) -> "OptimParameters":
+        return cls(**data)
+    
+    @classmethod
+    def from_json(cls, path: str) -> "OptimParameters":
+        with open(path, "r") as f:
+            return cls.from_dict(json.load(f))
+    
 
 
 class PreTrainTextDataset(Dataset[tuple[Tensor, Tensor]]):
@@ -250,12 +288,41 @@ class PreTrainTextDataset(Dataset[tuple[Tensor, Tensor]]):
         y = torch.from_numpy(self.data[idx + 1 : idx + 1 + self.chunk_size].astype(np.int64))
         return x, y
 
+def get_lr_scheduler(optimizer: Optimizer, cfg: OptimParameters)-> LRScheduler:  
+    """ get the learning rate scheduler for the optimizer                                                                                                                                                                                
+    Args:
+        optimizer: the optimizer to schedule the learning rate for
+        cfg: the configuration parameters for the optimizer
+    Returns:
+        the learning rate scheduler
+    """
+    peak_lr = cfg.lr                                                                                                                                                                
+    min_lr = cfg.min_lr                                                                                                                                                                  
+    warmup_steps = cfg.warmup_steps                                                                                                                                                                  
+    max_steps = cfg.max_steps
+                                                                                                                                                                                                                                                                                                                                                                    
+    warmup = LinearLR(
+        optimizer, start_factor=1e-8, end_factor=1.0, total_iters=warmup_steps                                                                                                            
+    )               
+    cosine = CosineAnnealingLR(
+        optimizer, T_max=max_steps - warmup_steps, eta_min=min_lr                                                                                                                         
+    )   
+    scheduler = SequentialLR(                                                                                                                                                             
+        optimizer, schedulers=[warmup, cosine], milestones=[warmup_steps]
+    ) 
+    return scheduler   
 
-def load_tinyshakespeare_tokens(
+def load_text_tokens(
     data_path: str | Path = "./char-rnn/data/tinyshakespeare/input.txt",
     tokenizer_name: str = "gpt2",
 ) -> tuple[AutoTokenizer, np.ndarray]:
-    """Tokenize the Tiny Shakespeare corpus with a GPT tokenizer."""
+    """Tokenize the text corpus with a GPT tokenizer.
+    Args:
+        data_path: the path to the data to tokenize
+        tokenizer_name: the name of the tokenizer to use
+    Returns:
+        the tokenizer and the tokenized data
+    """
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
     eos_id = tokenizer.eos_token_id
     text = Path(data_path).read_text()
