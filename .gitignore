@@ -2,3 +2,15 @@ char-rnn/
 data/
 outputs/
 __pycache__/
+
+# scratch / WIP notebooks
+*_0.ipynb
+
+# VLM (will revisit)
+VLM.py
+VLM.ipynb
+VLM_v1.ipynb
+
+# stray large files at repo root
+*.zip
+download.log
