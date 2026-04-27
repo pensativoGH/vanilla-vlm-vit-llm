@@ -1,16 +1,18 @@
+# Data, checkpoints, build artifacts
 char-rnn/
 data/
 outputs/
 __pycache__/
 
-# scratch / WIP notebooks
+# Stray binary / log files at repo root
+/*.zip
+*.log
+
+# Scratch / WIP notebooks
 *_0.ipynb
 
-# VLM (will revisit)
-VLM.py
-VLM.ipynb
-VLM_v1.ipynb
+# Old root-level VLM notebook (replaced by scripts/VLM.ipynb)
+/VLM.ipynb
 
-# stray large files at repo root
-*.zip
-download.log
+# In-progress VLM notebook variant
+scripts/VLM_v1.ipynb

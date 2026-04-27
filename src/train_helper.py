@@ -16,6 +16,7 @@ from torch.utils.data import DataLoader
 from configs import OptimParameters
 from GPT import GPT
 from ViT import ViT
+from VLM import VLM
 
 
 def get_lr_scheduler(optimizer: Optimizer, cfg: OptimParameters) -> LRScheduler:
@@ -91,3 +92,60 @@ def evaluate(
     avg_loss = total_loss / total_samples
     accuracy = total_correct / total_samples
     return avg_loss, accuracy
+
+
+@torch.no_grad()
+def validate_vlm(
+    model: VLM,
+    val_loader: DataLoader,
+    device: torch.device | str,
+    max_batches: int | None = None,
+    autocast_dtype: torch.dtype | None = None,
+) -> float:
+    """Compute mean validation loss over the val dataloader.
+
+    Args:
+        model: VLM instance.
+        val_loader: yields (images, text_tokens, attention_mask, targets).
+        device: cuda device or string.
+        max_batches: cap on batches (handy when val is large).
+        autocast_dtype: if set, run forward inside `torch.autocast` with this
+            dtype (match training to keep loss numbers comparable).
+
+    Returns:
+        Mean loss across processed batches.
+    """
+    was_training = model.training
+    model.eval()
+
+    total_loss = 0.0
+    n_batches = 0
+
+    for batch_idx, (images, text_tokens, attention_mask, targets) in enumerate(val_loader):
+        if max_batches is not None and batch_idx >= max_batches:
+            break
+
+        images = images.to(device)
+        text_tokens = text_tokens.to(device)
+        attention_mask = attention_mask.to(device)
+        targets = targets.to(device)
+
+        if autocast_dtype is not None:
+            with torch.autocast(device_type="cuda", dtype=autocast_dtype):
+                _, loss = model(
+                    x_img=images, x_text=text_tokens,
+                    targets=targets, attention_mask=attention_mask,
+                )
+        else:
+            _, loss = model(
+                x_img=images, x_text=text_tokens,
+                targets=targets, attention_mask=attention_mask,
+            )
+
+        total_loss += loss.item()
+        n_batches += 1
+
+    if was_training:
+        model.train()
+
+    return total_loss / max(n_batches, 1)

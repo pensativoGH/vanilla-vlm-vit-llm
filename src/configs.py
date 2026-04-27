@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Tuple
+from typing import Optional, Tuple
 
 import torch
 
@@ -86,3 +86,47 @@ class ConfigParametersViT:
     def from_json(cls, path: str) -> "ConfigParametersViT":
         with open(path, "r") as f:
             return cls.from_dict(json.load(f))
+
+
+@dataclass
+class ConfigParametersVLM:
+    """VLM configuration. Vision encoder + LLM are passed in already built."""
+
+    model_dim: int
+    vision_model_dim: int
+    device: str | torch.device
+    vision_encoder: Optional[object] = None
+    LLM: Optional[object] = None
+    batch_size: int = 32
+
+
+    @classmethod
+    def from_dict(cls, d: dict) -> ConfigParametersVLM:
+        return cls(**d)
+
+
+
+@dataclass
+class OptimParametersVLM:
+    """AdamW configuration for VLM training."""
+
+    lr: float = 2e-5
+    betas: Tuple[float, float] = (0.9, 0.99)
+    eps: float = 1e-8
+    min_lr: float = 3e-5
+    warmup_steps: int = 500
+    max_steps: int = 10000
+    scheduler: bool | None = None
+    compile: bool | None = None
+    autocast: bool | None = None
+    autocast_dtype: torch.dtype | None = None
+
+    def __post_init__(self):
+        if self.autocast is not None:
+            if self.autocast_dtype is None:
+                self.autocast_dtype = torch.bfloat16
+
+
+    @classmethod
+    def from_dict(cls, d: dict) -> OptimParametersVLM:
+        return cls(**d)
