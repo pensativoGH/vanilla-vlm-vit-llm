@@ -9,6 +9,7 @@ import torch.nn as nn
 from torch import Tensor
 
 from configs import ConfigParametersLLM
+from torchtune.modules import RotaryPositionalEmbeddings as RotaryEmbedding
 
 
 class LayerNormalization(nn.Module):
@@ -76,7 +77,7 @@ def cross_entropy_loss(logits: Tensor, targets: Tensor, ignore_index: int = -100
 class MultiHeadAttention(nn.Module):
     """Multi head self attention used by GPT and ViT."""
 
-    def __init__(self, model_dim: int, num_heads: int, device: torch.device | str) -> None:
+    def __init__(self, model_dim: int, num_heads: int, device: torch.device | str, pos_emb_type: str | None = None) -> None:
         super().__init__()
         self.model_dim = model_dim
         self.head_dim = model_dim // num_heads
@@ -87,6 +88,10 @@ class MultiHeadAttention(nn.Module):
         self.k_proj = Linear(self.model_dim, self.model_dim, bias=False)
         self.v_proj = Linear(self.model_dim, self.model_dim, bias=False)
         self.o_proj = Linear(self.model_dim, self.model_dim, bias=False)
+
+        self.pos_emb = None
+        if pos_emb_type is not None and pos_emb_type == "rope":
+            self.pos_emb = RotaryEmbedding(dim=self.head_dim, max_seq_len=2048)
 
     def forward(
         self,
@@ -100,9 +105,20 @@ class MultiHeadAttention(nn.Module):
         k = self.k_proj(x)
         v = self.v_proj(x)
 
-        q = q.view(batch_size, seq_len, self.num_heads, self.head_dim).transpose(1, 2)
-        k = k.view(batch_size, seq_len, self.num_heads, self.head_dim).transpose(1, 2)
-        v = v.view(batch_size, seq_len, self.num_heads, self.head_dim).transpose(1, 2)
+        q = q.view(batch_size, seq_len, self.num_heads, self.head_dim)
+        k = k.view(batch_size, seq_len, self.num_heads, self.head_dim)
+        v = v.view(batch_size, seq_len, self.num_heads, self.head_dim)
+
+        #add rotatory embeddings if provided. done before transpose because rotatory embeddings expects [B, T, H, head_dim]
+        if self.pos_emb is not None:
+            pos = torch.arange(seq_len, device=self.device)                
+            q = self.pos_emb(q, input_pos=pos)                                                                                                                                                   
+            k = self.pos_emb(k, input_pos=pos) 
+
+        # transpose to [B, H, T, head_dim] for the attention math (Q @ K^T expects heads as outer)                                                                                         
+        q = q.transpose(1, 2)                                                                                                                                                                 
+        k = k.transpose(1, 2)
+        v = v.transpose(1, 2)  
 
         score = torch.matmul(q, k.transpose(-2, -1))
         score = score / math.sqrt(self.head_dim)
@@ -124,9 +140,10 @@ class MultiHeadAttention(nn.Module):
 class TransformerBlock(nn.Module):
     """Pre norm transformer block."""
 
-    def __init__(self, model_dim: int, num_heads: int, device: torch.device | str) -> None:
+    def __init__(self, model_dim: int, num_heads: int, device: torch.device | str, pos_emb_type: str | None = None) -> None:
         super().__init__()
-        self.MHSA = MultiHeadAttention(model_dim, num_heads, device)
+        self.pos_emb_type = pos_emb_type
+        self.MHSA = MultiHeadAttention(model_dim, num_heads, device, pos_emb_type)
         self.layernorm1 = LayerNormalization(model_dim)
         self.layernorm2 = LayerNormalization(model_dim)
         self.FFN = nn.Sequential(
@@ -158,20 +175,28 @@ class GPT(nn.Module):
         self.vocab_size = cfg.vocab_size
         self.max_seq_len = cfg.max_seq_length
         self.device = cfg.device
+        self.pos_emb_type = cfg.pos_emb_type
+
 
         self.blocks = nn.ModuleList(
-            [TransformerBlock(self.model_dim, self.num_heads, self.device) for _ in range(self.num_blocks)]
+            [TransformerBlock(self.model_dim, self.num_heads, self.device, self.pos_emb_type) for _ in range(self.num_blocks)]
         )
         self.logit_proj = Linear(self.model_dim, cfg.vocab_size, bias=False)
         self.token_embeddings = nn.Embedding(self.vocab_size, self.model_dim)
-        self.pos_emb = nn.Embedding(self.max_seq_len, self.model_dim)
 
-    def input_embeddings(self, x: Tensor) -> Tensor:
+        #if no position embedding type is provided, use a learned embedding
+        if cfg.pos_emb_type is None or cfg.pos_emb_type == "absolute":
+            self.pos_emb = nn.Embedding(self.max_seq_len, self.model_dim)
+
+    def input_embeddings(self, x: Tensor, pos_emb_type: str | None = None) -> Tensor:
         """Add token and position embeddings for integer token ids."""
         _, seq_len = x.shape
         token_embeddings = self.token_embeddings(x)
-        pos_embeddings = self.pos_emb(torch.arange(seq_len, device=self.device))
-        return token_embeddings + pos_embeddings
+        if pos_emb_type is None or pos_emb_type != "rope":
+            pos_embeddings = self.pos_emb(torch.arange(seq_len, device=self.device))
+            return token_embeddings + pos_embeddings
+        
+        return token_embeddings
 
     def forward(
         self,
@@ -188,7 +213,7 @@ class GPT(nn.Module):
         if input_embeds is not None:
             hidden = input_embeds
         else:
-            hidden = self.input_embeddings(x)
+            hidden = self.input_embeddings(x, self.pos_emb_type)
 
         for block in self.blocks:
             hidden = block(hidden, attention_mask, causal)

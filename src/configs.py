@@ -23,6 +23,7 @@ class ConfigParametersLLM:
     chunk_size: int = 256
     batch_size: int = 16
     num_blocks: int = 2
+    pos_emb_type: str | None = "rope"
 
     @classmethod
     def from_dict(cls, data: dict) -> "ConfigParametersLLM":
@@ -77,6 +78,7 @@ class ConfigParametersViT:
     num_heads: int = 4
     batch_size: int = 64
     num_blocks: int = 4
+    pos_emb_type: str | None = "rope"
 
     @classmethod
     def from_dict(cls, d: dict) -> "ConfigParametersViT":

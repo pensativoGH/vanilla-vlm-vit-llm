@@ -23,14 +23,18 @@ class ViT(nn.Module):
         self.patch_size = cfg.patch_size
         self.patch_dim = cfg.patch_dim
         self.num_classes = cfg.num_classes
+        self.pos_emb_type = cfg.pos_emb_type
 
         self.blocks = nn.ModuleList(
-            [TransformerBlock(self.model_dim, self.num_heads, self.device) for _ in range(self.num_blocks)]
+            [TransformerBlock(self.model_dim, self.num_heads, self.device, self.pos_emb_type) for _ in range(self.num_blocks)]
         )
         self.logit_proj = Linear(self.model_dim, cfg.num_classes, bias=False)
         self.cls_token = nn.Parameter(torch.randn(1, 1, self.model_dim))
         self.x_proj = Linear(self.patch_dim, self.model_dim)
-        self.pos_emb = nn.Embedding(self.num_patches + 1, self.model_dim)
+
+        self.pos_emb = None
+        if self.pos_emb_type is None or self.pos_emb_type == "absolute":
+            self.pos_emb = nn.Embedding(self.num_patches + 1, self.model_dim)
 
     def img_to_patch(self, x: Tensor) -> Tensor:
         """Split images into flattened non overlapping patches."""
@@ -54,12 +58,17 @@ class ViT(nn.Module):
         causal: bool = False,
     ) -> Tensor:
         """Create patch tokens, add class token and pass through transformer blocks."""
+
+        #patch tokenization and class token addition
         batch_size = x.shape[0]
         x = self.img_to_patch(x)
         cls_token = self.cls_token.expand(batch_size, 1, self.model_dim)
         x = torch.cat([cls_token, x], dim=1)
-        pos_emb = self.pos_emb(torch.arange(self.num_patches + 1, device=x.device))
-        x = x + pos_emb
+
+        #add position embeddings if absolute position embedding type is provided
+        if self.pos_emb is not None:
+            pos = self.pos_emb(torch.arange(x.shape[1], device=x.device))
+            x = x + pos
 
         for block in self.blocks:
             x = block(x, attention_mask, causal)
