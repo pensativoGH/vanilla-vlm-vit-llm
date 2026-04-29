@@ -8,8 +8,8 @@ import torch
 import torch.nn as nn
 from torch import Tensor
 
-from GPT import Linear
-from configs import ConfigParametersVLM
+from src.model.gpt import Linear
+from src.configs import ConfigParametersVLM
 
 
 class CustomViTAdapter(nn.Module):
@@ -31,6 +31,9 @@ class SigLIPAdapter(nn.Module):
           super().__init__()
           self.model = siglip_vision_model
           self.model_dim = self.model.config.hidden_size
+
+          for param in self.model.parameters():
+              param.requires_grad = False
          
 
       def get_image_tokens(self, x: Tensor) -> Tensor:
@@ -105,7 +108,7 @@ class VLM(nn.Module):
         eos_token_id: int,
     ) -> Tensor:
         """Greedy decoding given an image and a text prompt."""
-        img_embeddings = self.vision_proj(self.vision_encoder.encode(x_img))
+        img_embeddings = self.vision_proj(self.vision_encoder(x_img))
         text_embeddings = self.LLM.token_embeddings(x_text)
         llm_embeddings = torch.cat([img_embeddings, text_embeddings], dim=1)
 

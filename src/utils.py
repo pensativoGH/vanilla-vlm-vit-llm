@@ -2,14 +2,15 @@ from __future__ import annotations
 
 import json
 
+import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
 from transformers import SiglipVisionModel
 
 from src.configs import ConfigParametersLLM, ConfigParametersVLM, ConfigParametersViT
-from src.model.GPT import GPT
-from src.model.VLM import CustomViTAdapter, SigLIPAdapter, VLM
-from src.model.ViT import ViT
+from src.model.gpt import GPT
+from src.model.vlm import CustomViTAdapter, SigLIPAdapter, VLM
+from src.model.vit import ViT
 
 
 def vlm_from_config(config: dict) -> VLM:
@@ -77,3 +78,22 @@ def vision_encoder_from_config(vision_cfg: dict, device) -> nn.Module:
         return SigLIPAdapter(siglip)
 
     raise ValueError(f"Unknown vision encoder type: {vision_cfg['type']}")
+
+
+def draw_plot(loss_list):
+    window = 100
+    if len(loss_list) >= window:
+        smoothed = [
+            sum(loss_list[i : i + window]) / window
+            for i in range(len(loss_list) - window + 1)
+        ]
+        plt.plot(loss_list, alpha=0.2, label="raw")
+        plt.plot(range(window - 1, len(loss_list)), smoothed, label="smoothed")
+    else:
+        plt.plot(loss_list, label="raw")
+
+    plt.xlabel("Step")
+    plt.ylabel("Loss")
+    plt.title("VLM Train Loss")
+    plt.legend()
+    plt.show()

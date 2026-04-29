@@ -167,7 +167,7 @@ class ImagenetteQADataset(Dataset):
         }
 
 
-def imagenette_qa_collate_fn(batch: list[dict], pad_id: int):
+def vqa_collate_fn(batch: list[dict], pad_id: int):
     """Right-pad text tokens to the longest in batch."""
     images = torch.stack([item["image"] for item in batch], dim=0)
 
@@ -186,6 +186,70 @@ def imagenette_qa_collate_fn(batch: list[dict], pad_id: int):
         attention_mask[i, :n] = 1
 
     return images, text_tokens, attention_mask, targets
+
+
+# ---------------------------------------------------------------------------
+# Visual Genome QA dataset (image + question + answer)
+# ---------------------------------------------------------------------------
+
+class VisualGenomeQADataset(Dataset):
+    """Visual Genome QA pairs prepared in the shared VQA JSON format."""
+
+    def __init__(
+        self,
+        split: str,
+        tokenizer,
+        transform: Callable,
+        max_len: int = 256,
+        data_dir: str = "./data/visual_genome",
+        image_root: str | None = None,
+        limit: int | None = None,
+    ) -> None:
+        self.transform = transform
+        self.tokenizer = tokenizer
+        self.eos = tokenizer.eos_token_id
+
+        if tokenizer.pad_token_id is None:
+            tokenizer.pad_token = tokenizer.eos_token
+        self.pad_id = tokenizer.pad_token_id
+
+        self.max_len = max_len
+        self.root = image_root or os.path.join(data_dir, "images")
+
+        fname = f"visual_genome_qa_{split}.json"
+        with open(os.path.join(data_dir, fname)) as f:
+            self.data = json.load(f)
+
+        if limit is not None:
+            self.data = self.data[:limit]
+
+    def __len__(self) -> int:
+        return len(self.data)
+
+    def __getitem__(self, idx: int) -> dict:
+        item = self.data[idx]
+
+        img = Image.open(os.path.join(self.root, item["image"])).convert("RGB")
+        img = self.transform(img)
+
+        q_ids = self.tokenizer(item["question"], add_special_tokens=False)["input_ids"]
+        a_ids = self.tokenizer(item["answer"], add_special_tokens=False)["input_ids"] + [self.eos]
+
+        text_ids = (q_ids + a_ids)[:self.max_len]
+        text_tokens = torch.tensor(text_ids, dtype=torch.long)
+
+        targets = text_tokens.clone()
+        targets[:-1] = text_tokens[1:]
+        targets[-1] = self.eos
+
+        q_len = min(len(q_ids), len(text_tokens))
+        targets[:q_len] = -100
+
+        return {
+            "image": img,
+            "text_tokens": text_tokens,
+            "targets": targets,
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -293,14 +357,14 @@ def build_vlm_dataloaders(
         batch_size=batch_size,
         shuffle=True,
         num_workers=num_workers,
-        collate_fn=lambda batch: imagenette_qa_collate_fn(batch, train_ds.pad_id),
+        collate_fn=lambda batch: vqa_collate_fn(batch, train_ds.pad_id),
     )
     val_loader = DataLoader(
         val_ds,
         batch_size=batch_size,
         shuffle=False,
         num_workers=num_workers,
-        collate_fn=lambda batch: imagenette_qa_collate_fn(batch, val_ds.pad_id),
+        collate_fn=lambda batch: vqa_collate_fn(batch, val_ds.pad_id),
     )
     return train_loader, val_loader
 
@@ -334,13 +398,61 @@ def build_coco_dataloaders(
         batch_size=batch_size,
         shuffle=True,
         num_workers=num_workers,
-        collate_fn=lambda batch: imagenette_qa_collate_fn(batch, train_ds.pad_id),
+        collate_fn=lambda batch: vqa_collate_fn(batch, train_ds.pad_id),
     )
     val_loader = DataLoader(
         val_ds,
         batch_size=batch_size,
         shuffle=False,
         num_workers=num_workers,
-        collate_fn=lambda batch: imagenette_qa_collate_fn(batch, val_ds.pad_id),
+        collate_fn=lambda batch: vqa_collate_fn(batch, val_ds.pad_id),
+    )
+    return train_loader, val_loader
+
+
+def build_visual_genome_qa_dataloaders(
+    tokenizer,
+    transform: Callable = val_tfm,
+    batch_size: int = 32,
+    max_len: int = 256,
+    data_dir: str = "./data/visual_genome",
+    image_root: str | None = None,
+    num_workers: int = 2,
+    train_limit: int | None = None,
+    val_limit: int | None = None,
+) -> tuple[DataLoader, DataLoader]:
+    """Build train + val dataloaders for Visual Genome QA."""
+    train_ds = VisualGenomeQADataset(
+        "train",
+        tokenizer,
+        transform,
+        max_len=max_len,
+        data_dir=data_dir,
+        image_root=image_root,
+        limit=train_limit,
+    )
+    val_ds = VisualGenomeQADataset(
+        "val",
+        tokenizer,
+        transform,
+        max_len=max_len,
+        data_dir=data_dir,
+        image_root=image_root,
+        limit=val_limit,
+    )
+
+    train_loader = DataLoader(
+        train_ds,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=num_workers,
+        collate_fn=lambda batch: vqa_collate_fn(batch, train_ds.pad_id),
+    )
+    val_loader = DataLoader(
+        val_ds,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=num_workers,
+        collate_fn=lambda batch: vqa_collate_fn(batch, val_ds.pad_id),
     )
     return train_loader, val_loader

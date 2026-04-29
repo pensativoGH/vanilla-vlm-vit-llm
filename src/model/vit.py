@@ -6,8 +6,8 @@ import torch
 import torch.nn as nn
 from torch import Tensor
 
-from GPT import TransformerBlock, Linear, cross_entropy_loss
-from configs import ConfigParametersViT
+from src.model.gpt import TransformerBlock, Linear, cross_entropy_loss
+from src.configs import ConfigParametersViT
 
 
 class ViT(nn.Module):

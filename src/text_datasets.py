@@ -10,7 +10,7 @@ from torch import Tensor
 from torch.utils.data import DataLoader, Dataset
 from transformers import AutoTokenizer
 
-from configs import ConfigParametersLLM
+from src.configs import ConfigParametersLLM
 
 
 class PreTrainTextDataset(Dataset[tuple[Tensor, Tensor]]):

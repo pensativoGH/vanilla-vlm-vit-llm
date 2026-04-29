@@ -8,7 +8,7 @@ import torch
 import torch.nn as nn
 from torch import Tensor
 
-from configs import ConfigParametersLLM
+from src.configs import ConfigParametersLLM
 from torchtune.modules import RotaryPositionalEmbeddings as RotaryEmbedding
 
 

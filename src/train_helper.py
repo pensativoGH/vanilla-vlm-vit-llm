@@ -13,10 +13,10 @@ from torch.optim.lr_scheduler import (
 )
 from torch.utils.data import DataLoader
 
-from configs import OptimParameters
-from GPT import GPT
-from ViT import ViT
-from VLM import VLM
+from src.configs import OptimParameters
+from src.model.gpt import GPT
+from src.model.vit import ViT
+from src.model.vlm import VLM
 
 
 def get_lr_scheduler(optimizer: Optimizer, cfg: OptimParameters) -> LRScheduler:
