@@ -1,10 +1,10 @@
-"""Prepare a small Visual Genome QA subset for VLM training.
+"""Prepare a Visual Genome QA subset for VLM training.
 
 This script:
 1. downloads Visual Genome image metadata and QA metadata
 2. splits by image id to avoid train/val image leakage
 3. keeps 10% of QA images for training by default
-4. writes Imagenette-style JSON manifests for reuse by the VQA dataloader
+4. writes chat-style JSON manifests for reuse by the VQA dataloader
 5. downloads only the images referenced by the sampled train/val subsets
 """
 
@@ -27,7 +27,8 @@ IMAGE_DATA_URL = "https://homes.cs.washington.edu/~ranjay/visualgenome/data/data
 QUESTION_ANSWERS_URL = "https://homes.cs.washington.edu/~ranjay/visualgenome/data/dataset/question_answers.json.zip"
 REQUEST_HEADERS = {"User-Agent": "Mozilla/5.0"}
 DOWNLOAD_TIMEOUT_SECS = 20
-DOWNLOAD_RETRIES = 3
+DOWNLOAD_RETRIES = 5
+RETRY_BACKOFF_SECS = 2.0
 
 
 def download_file(url: str, out_path: Path) -> None:
@@ -72,9 +73,18 @@ def build_samples(records: list[dict], image_id_to_name: dict[int, str]) -> list
 
             samples.append(
                 {
+                    "id": str(qa.get("qa_id", f"{image_id}_{len(samples)}")),
                     "image": image_name,
-                    "question": f"<image>\n{question}",
-                    "answer": answer,
+                    "conversations": [
+                        {
+                            "from": "user",
+                            "value": f"<image>\n{question}",
+                        },
+                        {
+                            "from": "assistant",
+                            "value": answer,
+                        },
+                    ],
                 }
             )
 
@@ -85,17 +95,21 @@ def build_samples(records: list[dict], image_id_to_name: dict[int, str]) -> list
 
 def download_images(image_records: list[dict], image_dir: Path) -> None:
     image_dir.mkdir(parents=True, exist_ok=True)
-    total = len(image_records)
+    by_name = {Path(item["url"]).name: item for item in image_records}
+    missing_names = sorted(name for name in by_name if not (image_dir / name).exists())
+    total = len(missing_names)
+    if total == 0:
+        print("All referenced Visual Genome images are already present")
+        return
+
     failures = 0
-    for i, item in enumerate(image_records, start=1):
+    for i, file_name in enumerate(missing_names, start=1):
+        item = by_name[file_name]
         url = item["url"]
-        file_name = Path(url).name
         out_path = image_dir / file_name
-        if out_path.exists():
-            continue
 
         if i % 500 == 1 or i == total:
-            print(f"Downloading image {i}/{total}")
+            print(f"Downloading missing image {i}/{total}")
         success = False
         for attempt in range(1, DOWNLOAD_RETRIES + 1):
             try:
@@ -107,7 +121,7 @@ def download_images(image_records: list[dict], image_dir: Path) -> None:
                     out_path.unlink(missing_ok=True)
                 if attempt < DOWNLOAD_RETRIES:
                     print(f"Retrying {file_name} ({attempt}/{DOWNLOAD_RETRIES}) after: {e}")
-                    time.sleep(1)
+                    time.sleep(RETRY_BACKOFF_SECS * attempt)
                 else:
                     failures += 1
                     print(f"Skipping {file_name} after {DOWNLOAD_RETRIES} failed attempts: {e}")
@@ -117,6 +131,8 @@ def download_images(image_records: list[dict], image_dir: Path) -> None:
 
     if failures:
         print(f"Skipped {failures} image downloads due to transient errors")
+    else:
+        print("Downloaded all missing referenced Visual Genome images")
 
 
 def main() -> None:

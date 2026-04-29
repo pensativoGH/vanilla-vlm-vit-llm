@@ -193,7 +193,7 @@ def vqa_collate_fn(batch: list[dict], pad_id: int):
 # ---------------------------------------------------------------------------
 
 class VisualGenomeQADataset(Dataset):
-    """Visual Genome QA pairs prepared in the shared VQA JSON format."""
+    """Visual Genome QA pairs prepared in chat or legacy VQA JSON format."""
 
     def __init__(
         self,
@@ -232,8 +232,17 @@ class VisualGenomeQADataset(Dataset):
         img = Image.open(os.path.join(self.root, item["image"])).convert("RGB")
         img = self.transform(img)
 
-        q_ids = self.tokenizer(item["question"], add_special_tokens=False)["input_ids"]
-        a_ids = self.tokenizer(item["answer"], add_special_tokens=False)["input_ids"] + [self.eos]
+        if "conversations" in item:
+            user_turn = next(turn for turn in item["conversations"] if turn["from"] == "user")
+            assistant_turn = next(turn for turn in item["conversations"] if turn["from"] == "assistant")
+            question = user_turn["value"]
+            answer = assistant_turn["value"]
+        else:
+            question = item["question"]
+            answer = item["answer"]
+
+        q_ids = self.tokenizer(question, add_special_tokens=False)["input_ids"]
+        a_ids = self.tokenizer(answer, add_special_tokens=False)["input_ids"] + [self.eos]
 
         text_ids = (q_ids + a_ids)[:self.max_len]
         text_tokens = torch.tensor(text_ids, dtype=torch.long)
