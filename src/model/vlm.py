@@ -8,7 +8,7 @@ import torch
 import torch.nn as nn
 from torch import Tensor
 
-from src.model.gpt import Linear
+from src.model.custom_modules import Linear
 from src.configs import ConfigParametersVLM
 
 

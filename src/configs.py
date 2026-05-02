@@ -4,9 +4,13 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Literal
 
 import torch
+import torch.nn as nn
+
+from src.model.custom_modules import LayerNormalization, Linear, GLU
+
 
 
 @dataclass
@@ -24,6 +28,10 @@ class ConfigParametersLLM:
     batch_size: int = 16
     num_blocks: int = 2
     pos_emb_type: str | None = "rope"
+    q_heads: int = 16
+    kv_heads: int = 4
+    projection_type: str | None = "linear"
+    
 
     @classmethod
     def from_dict(cls, data: dict) -> "ConfigParametersLLM":
@@ -133,3 +141,45 @@ class OptimParametersVLM:
     @classmethod
     def from_dict(cls, d: dict) -> OptimParametersVLM:
         return cls(**d)
+
+
+NORM_REGISTRY = {
+    "custom_layernorm": lambda cfg: LayerNormalization(cfg.model_dim),
+    "layernorm": lambda cfg: nn.LayerNorm(cfg.model_dim),
+}
+
+PROJECTION_REGISTRY = {
+    "custom_linear": lambda dim_in, dim_out: Linear(dim_in, dim_out, bias=False),
+    "linear": lambda dim_in, dim_out: nn.Linear(dim_in, dim_out, bias=False),
+}
+
+
+MLP_REGISTRY = {
+    "custom_ffn_glu": lambda cfg: nn.Sequential(
+        Linear(cfg.model_dim, 4 * cfg.model_dim, bias=False),
+        GLU(),
+        Linear((4 * cfg.model_dim) // 2, cfg.model_dim, bias=False),
+    ),
+    "ffn_glu": lambda cfg: nn.Sequential(
+        nn.Linear(cfg.model_dim, 4 * cfg.model_dim, bias=False),
+        nn.GLU(),
+        nn.Linear((4* cfg.model_dim) // 2, cfg.model_dim, bias=False),
+    ),
+}
+
+
+@dataclass
+class TransformerConfig:
+    attention_type: Literal["mha", "gqa"] = "mha"
+    norm_type: Literal["layernorm", "custom_layernorm"] = "custom_layernorm"
+    projection_type: Literal["linear", "custom_linear"] = "custom_linear"
+    mlp_type: Literal["ffn_glu", "custom_ffn_glu"] = "custom_ffn_glu"
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "TransformerConfig":
+        return cls(**data)
+
+    @classmethod
+    def from_json(cls, path: str) -> "TransformerConfig":
+        with open(path, "r") as f:
+            return cls.from_dict(json.load(f))

@@ -6,7 +6,8 @@ import torch
 import torch.nn as nn
 from torch import Tensor
 
-from src.model.gpt import TransformerBlock, Linear, cross_entropy_loss
+from src.model.custom_modules import Linear, cross_entropy_loss
+from src.model.gpt import TransformerBlock
 from src.configs import ConfigParametersViT
 
 

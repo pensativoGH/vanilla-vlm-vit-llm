@@ -8,7 +8,7 @@ import torch.nn as nn
 from transformers import SiglipVisionModel
 
 from src.configs import ConfigParametersLLM, ConfigParametersVLM, ConfigParametersViT
-from src.model.gpt import GPT
+from src.model.gpt import GPT, TransformerConfig
 from src.model.vlm import CustomViTAdapter, SigLIPAdapter, VLM
 from src.model.vit import ViT
 
@@ -28,14 +28,21 @@ def vlm_from_config(config: dict) -> VLM:
     return VLM(vlm_cfg)
 
 
-def llm_from_config(llm_cfg: dict, device) -> nn.Module:
+def llm_from_config(llm_cfg: dict, tfr_cfg: dict, device) -> nn.Module:
+
     if llm_cfg["type"] == "custom_gpt":
         with open(llm_cfg["config_path"], "r") as f:
             params = json.load(f)
 
         params["device"] = device
         cfg = ConfigParametersLLM.from_dict(params)
-        model = GPT(cfg)
+
+        with open(tfr_cfg["config_path"], "r") as f:
+            params = json.load(f)
+
+        cfg_tfr = TransformerConfig.from_dict(params)
+
+        model = GPT(cfg, cfg_tfr)
 
         if "checkpoint_path" in llm_cfg:
             payload = torch.load(llm_cfg["checkpoint_path"], map_location=device)

@@ -8,12 +8,31 @@ import torch
 import torch.nn as nn
 from torch import Tensor
 from torchtune.modules import RotaryPositionalEmbeddings as RotaryEmbedding
+from src.configs import PROJECTION_REGISTRY
+from src.model.custom_modules import Linear, softmax_fn
 
-from src.model.gpt import Linear, softmax_fn
+
+ATTENTION_REGISTRY = {
+    "mha": lambda cfg: MultiHeadAttention(
+        projection_type=cfg.projection_type,
+        model_dim=cfg.model_dim,
+        num_heads=cfg.q_heads,
+        device=cfg.device,
+        pos_emb_type=cfg.pos_emb_type,
+    ),
+    "gqa": lambda cfg: GroupQueryAttention(
+        projection_type=cfg.projection_type,
+        model_dim=cfg.model_dim,
+        q_heads=cfg.q_heads,
+        kv_heads=cfg.kv_heads,
+        device=cfg.device,
+        pos_emb_type=cfg.pos_emb_type,
+    ),
+}
 
 
 class GroupQueryAttention(nn.Module):
-    def __init__(self, model_dim: int, q_heads: int, kv_heads: int, device: torch.device | str, pos_emb_type: str | None = None) -> None:
+    def __init__(self, projection_type: str, model_dim: int, q_heads: int, kv_heads: int, device: torch.device | str, pos_emb_type: str | None = None) -> None:
         super().__init__()
         self.model_dim = model_dim
         self.q_heads = q_heads
@@ -25,11 +44,11 @@ class GroupQueryAttention(nn.Module):
         self.head_dim = model_dim // q_heads
         self.device = device
 
-        self.q_proj = Linear(self.model_dim, self.q_heads * self.head_dim, bias=False)
-        self.k_proj = Linear(self.model_dim, self.kv_heads * self.head_dim, bias=False)
-        self.v_proj = Linear(self.model_dim, self.kv_heads * self.head_dim, bias=False)
+        self.q_proj = PROJECTION_REGISTRY[projection_type](self.model_dim, self.q_heads * self.head_dim)
+        self.k_proj = PROJECTION_REGISTRY[projection_type](self.model_dim, self.kv_heads * self.head_dim)
+        self.v_proj = PROJECTION_REGISTRY[projection_type](self.model_dim, self.kv_heads * self.head_dim)
 
-        self.o_proj = Linear(self.model_dim, self.model_dim, bias=False)
+        self.o_proj = PROJECTION_REGISTRY[projection_type](self.model_dim, self.model_dim)
 
         self.pos_emb = None
         if pos_emb_type is not None and pos_emb_type == "rope":
@@ -85,17 +104,19 @@ class GroupQueryAttention(nn.Module):
 class MultiHeadAttention(nn.Module):
     """Multi head self attention used by GPT and ViT."""
 
-    def __init__(self, model_dim: int, num_heads: int, device: torch.device | str, pos_emb_type: str | None = None) -> None:
+    def __init__(self, projection_type: str, model_dim: int, num_heads: int, device: torch.device | str, pos_emb_type: str | None = None) -> None:
         super().__init__()
         self.model_dim = model_dim
+        self.projection_type = projection_type
         self.head_dim = model_dim // num_heads
         self.num_heads = num_heads
         self.device = device
 
-        self.q_proj = Linear(self.model_dim, self.model_dim, bias=False)
-        self.k_proj = Linear(self.model_dim, self.model_dim, bias=False)
-        self.v_proj = Linear(self.model_dim, self.model_dim, bias=False)
-        self.o_proj = Linear(self.model_dim, self.model_dim, bias=False)
+
+        self.q_proj = PROJECTION_REGISTRY[self.projection_type](self.model_dim, self.model_dim)
+        self.k_proj = PROJECTION_REGISTRY[self.projection_type](self.model_dim, self.model_dim)
+        self.v_proj = PROJECTION_REGISTRY[self.projection_type](self.model_dim, self.model_dim)
+        self.o_proj = PROJECTION_REGISTRY[self.projection_type](self.model_dim, self.model_dim)
 
         self.pos_emb = None
         if pos_emb_type is not None and pos_emb_type == "rope":
