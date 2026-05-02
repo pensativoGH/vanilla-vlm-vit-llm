@@ -21,6 +21,12 @@ class TransformerBlock(nn.Module):
 
     def __init__(self, cfg_model: ConfigParametersLLM, cfg_block: TransformerConfig):
         super().__init__()
+        
+        assert cfg_block.attention_type in ATTENTION_REGISTRY, f"Attention type {cfg_block.attention_type} not found in ATTENTION_REGISTRY"
+        assert cfg_block.norm_type in NORM_REGISTRY, f"Norm type {cfg_block.norm_type} not found in NORM_REGISTRY"
+        assert cfg_block.mlp_type in MLP_REGISTRY, f"MLP type {cfg_block.mlp_type} not found in MLP_REGISTRY"
+        assert cfg_block.projection_type in PROJECTION_REGISTRY, f"Projection type {cfg_block.projection_type} not found in PROJECTION_REGISTRY"
+
         self.pos_emb_type = cfg_model.pos_emb_type
         self.attention = ATTENTION_REGISTRY[cfg_block.attention_type](cfg_model)
         self.layernorm1 = NORM_REGISTRY[cfg_block.norm_type](cfg_model)
@@ -48,7 +54,7 @@ class GPT(nn.Module):
         
         #set the projection type for the model from the transformer config
         cfg.projection_type = cfg_transformer.projection_type
-        
+
         self.blocks = nn.ModuleList(
             [TransformerBlock(cfg_model=cfg, cfg_block=cfg_transformer) for _ in range(cfg.num_blocks)]
         )
