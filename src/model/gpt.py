@@ -62,11 +62,15 @@ class GPT(nn.Module):
         assert PROJECTION_REGISTRY[cfg.logit_projection_type] is not None, f"Projection type {cfg.logit_projection_type} not found in PROJECTION_REGISTRY"
         self.logit_proj = PROJECTION_REGISTRY[cfg.logit_projection_type](cfg.model_dim, cfg.vocab_size)
 
+        #learnable token embeddings
         self.token_embeddings = nn.Embedding(cfg.vocab_size, cfg.model_dim)
+
+        #position embedding type
         self.pos_emb_type = cfg.pos_emb_type
         #if no position embedding type is provided, use a learned embedding
         if cfg.pos_emb_type is None or cfg.pos_emb_type == "absolute":
             self.pos_emb = nn.Embedding(cfg.max_seq_length, cfg.model_dim)
+            
 
     def input_embeddings(self, x: Tensor, pos_emb_type: str | None = None) -> Tensor:
         """Add token and position embeddings for integer token ids."""
