@@ -22,17 +22,13 @@ class ConfigParametersLLM:
     output_dir: str | None = None
     data_path: str | None = None
     max_seq_length: int = 512
-    model_dim: int = 768
-    num_heads: int = 4
     chunk_size: int = 256
     batch_size: int = 16
     num_blocks: int = 2
     pos_emb_type: str | None = "rope"
-    q_heads: int = 16
-    kv_heads: int = 4
-    projection_type: str | None = "linear"
+    logit_projection_type: str | None = "linear"
+    model_dim: int = 768
     
-
     @classmethod
     def from_dict(cls, data: dict) -> "ConfigParametersLLM":
         return cls(**data)
@@ -169,17 +165,22 @@ MLP_REGISTRY = {
 
 
 @dataclass
-class TransformerConfig:
+class TransformerBlockConfig:
     attention_type: Literal["mha", "gqa"] = "mha"
     norm_type: Literal["layernorm", "custom_layernorm"] = "custom_layernorm"
     projection_type: Literal["linear", "custom_linear"] = "custom_linear"
     mlp_type: Literal["ffn_glu", "custom_ffn_glu"] = "custom_ffn_glu"
+    num_heads: int = 4
+    q_heads: int = 16
+    kv_heads: int = 4
+    model_dim: int = 768
+    pos_emb_type: str | None = "rope"
 
     @classmethod
-    def from_dict(cls, data: dict) -> "TransformerConfig":
+    def from_dict(cls, data: dict) -> "TransformerBlockConfig":
         return cls(**data)
 
     @classmethod
-    def from_json(cls, path: str) -> "TransformerConfig":
+    def from_json(cls, path: str) -> "TransformerBlockConfig":
         with open(path, "r") as f:
             return cls.from_dict(json.load(f))

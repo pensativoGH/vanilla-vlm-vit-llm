@@ -7,8 +7,8 @@ import torch
 import torch.nn as nn
 from transformers import SiglipVisionModel
 
-from src.configs import ConfigParametersLLM, ConfigParametersVLM, ConfigParametersViT
-from src.model.gpt import GPT, TransformerConfig
+from src.configs import ConfigParametersLLM, ConfigParametersVLM, ConfigParametersViT, TransformerBlockConfig
+from src.model.gpt import GPT
 from src.model.vlm import CustomViTAdapter, SigLIPAdapter, VLM
 from src.model.vit import ViT
 
@@ -40,7 +40,7 @@ def llm_from_config(llm_cfg: dict, tfr_cfg: dict, device) -> nn.Module:
         with open(tfr_cfg["config_path"], "r") as f:
             params = json.load(f)
 
-        cfg_tfr = TransformerConfig.from_dict(params)
+        cfg_tfr = [TransformerBlockConfig.from_dict(params) for _ in range(cfg.num_blocks)]
 
         model = GPT(cfg, cfg_tfr)
 

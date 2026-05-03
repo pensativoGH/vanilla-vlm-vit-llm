@@ -16,8 +16,7 @@ ATTENTION_REGISTRY = {
     "mha": lambda cfg: MultiHeadAttention(
         projection_type=cfg.projection_type,
         model_dim=cfg.model_dim,
-        num_heads=cfg.q_heads,
-        device=cfg.device,
+        num_heads=cfg.num_heads,
         pos_emb_type=cfg.pos_emb_type,
     ),
     "gqa": lambda cfg: GroupQueryAttention(
@@ -25,14 +24,13 @@ ATTENTION_REGISTRY = {
         model_dim=cfg.model_dim,
         q_heads=cfg.q_heads,
         kv_heads=cfg.kv_heads,
-        device=cfg.device,
         pos_emb_type=cfg.pos_emb_type,
     ),
 }
 
 
 class GroupQueryAttention(nn.Module):
-    def __init__(self, projection_type: str, model_dim: int, q_heads: int, kv_heads: int, device: torch.device | str, pos_emb_type: str | None = None) -> None:
+    def __init__(self, projection_type: str, model_dim: int, q_heads: int, kv_heads: int, pos_emb_type: str | None = None) -> None:
         super().__init__()
         self.model_dim = model_dim
         self.q_heads = q_heads
@@ -42,8 +40,7 @@ class GroupQueryAttention(nn.Module):
         assert model_dim % q_heads == 0, "model_dim must be divisible by q_heads"
 
         self.head_dim = model_dim // q_heads
-        self.device = device
-
+       
         self.q_proj = PROJECTION_REGISTRY[projection_type](self.model_dim, self.q_heads * self.head_dim)
         self.k_proj = PROJECTION_REGISTRY[projection_type](self.model_dim, self.kv_heads * self.head_dim)
         self.v_proj = PROJECTION_REGISTRY[projection_type](self.model_dim, self.kv_heads * self.head_dim)
@@ -104,15 +101,13 @@ class GroupQueryAttention(nn.Module):
 class MultiHeadAttention(nn.Module):
     """Multi head self attention used by GPT and ViT."""
 
-    def __init__(self, projection_type: str, model_dim: int, num_heads: int, device: torch.device | str, pos_emb_type: str | None = None) -> None:
+    def __init__(self, projection_type: str, model_dim: int, num_heads: int, pos_emb_type: str | None = None) -> None:
         super().__init__()
         self.model_dim = model_dim
         self.projection_type = projection_type
         self.head_dim = model_dim // num_heads
         self.num_heads = num_heads
-        self.device = device
-
-
+       
         self.q_proj = PROJECTION_REGISTRY[self.projection_type](self.model_dim, self.model_dim)
         self.k_proj = PROJECTION_REGISTRY[self.projection_type](self.model_dim, self.model_dim)
         self.v_proj = PROJECTION_REGISTRY[self.projection_type](self.model_dim, self.model_dim)
@@ -139,7 +134,7 @@ class MultiHeadAttention(nn.Module):
         v = v.view(batch_size, seq_len, self.num_heads, self.head_dim)
 
         if self.pos_emb is not None:
-            pos = torch.arange(seq_len, device=self.device)
+            pos = torch.arange(seq_len, device=x.device)
             q = self.pos_emb(q, input_pos=pos)
             k = self.pos_emb(k, input_pos=pos)
 

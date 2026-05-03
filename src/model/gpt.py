@@ -7,9 +7,9 @@ import math
 import torch
 import torch.nn as nn
 from torch import Tensor
+from typing import List
 
-
-from src.configs import ConfigParametersLLM, TransformerConfig, NORM_REGISTRY, MLP_REGISTRY, PROJECTION_REGISTRY
+from src.configs import ConfigParametersLLM, TransformerBlockConfig, NORM_REGISTRY, MLP_REGISTRY, PROJECTION_REGISTRY
 from src.model.custom_modules import GLU, LayerNormalization, Linear, cross_entropy_loss
 from src.model.attention import MultiHeadAttention, GroupQueryAttention, ATTENTION_REGISTRY
 from typing import Literal
@@ -19,18 +19,18 @@ from dataclasses import dataclass
 class TransformerBlock(nn.Module):
     """Pre norm transformer block."""
 
-    def __init__(self, cfg_model: ConfigParametersLLM, cfg_block: TransformerConfig):
+    def __init__(self, cfg_transformer_block: TransformerBlockConfig):
         super().__init__()
         
-        assert cfg_block.attention_type in ATTENTION_REGISTRY, f"Attention type {cfg_block.attention_type} not found in ATTENTION_REGISTRY"
-        assert cfg_block.norm_type in NORM_REGISTRY, f"Norm type {cfg_block.norm_type} not found in NORM_REGISTRY"
-        assert cfg_block.mlp_type in MLP_REGISTRY, f"MLP type {cfg_block.mlp_type} not found in MLP_REGISTRY"
+        assert cfg_transformer_block.attention_type in ATTENTION_REGISTRY, f"Attention type {cfg_transformer_block.attention_type} not found in ATTENTION_REGISTRY"
+        assert cfg_transformer_block.norm_type in NORM_REGISTRY, f"Norm type {cfg_transformer_block.norm_type} not found in NORM_REGISTRY"
+        assert cfg_transformer_block.mlp_type in MLP_REGISTRY, f"MLP type {cfg_transformer_block.mlp_type} not found in MLP_REGISTRY"
        
 
-        self.attention = ATTENTION_REGISTRY[cfg_block.attention_type](cfg_model)
-        self.layernorm1 = NORM_REGISTRY[cfg_block.norm_type](cfg_model)
-        self.layernorm2 = NORM_REGISTRY[cfg_block.norm_type](cfg_model)
-        self.mlp = MLP_REGISTRY[cfg_block.mlp_type](cfg_model)
+        self.attention = ATTENTION_REGISTRY[cfg_transformer_block.attention_type](cfg_transformer_block)
+        self.layernorm1 = NORM_REGISTRY[cfg_transformer_block.norm_type](cfg_transformer_block)
+        self.layernorm2 = NORM_REGISTRY[cfg_transformer_block.norm_type](cfg_transformer_block)
+        self.mlp = MLP_REGISTRY[cfg_transformer_block.mlp_type](cfg_transformer_block)
 
 
     def forward(
@@ -48,26 +48,22 @@ class TransformerBlock(nn.Module):
 class GPT(nn.Module):
     """Decoder only transformer language model."""
 
-    def __init__(self, cfg: ConfigParametersLLM, cfg_transformer: TransformerConfig) -> None:
+    def __init__(self, cfg: ConfigParametersLLM, cfg_transformer_blocks: List[TransformerBlockConfig]) -> None:
         super().__init__()
         
-        #set the projection type for the model from the transformer config
-        cfg.projection_type = cfg_transformer.projection_type
-
-        assert PROJECTION_REGISTRY[cfg_transformer.projection_type] is not None, f"Projection type {cfg_transformer.projection_type} not found in PROJECTION_REGISTRY"
-
+        assert len(cfg_transformer_blocks) == cfg.num_blocks, "Number of transformer blocks must match number of blocks in configuration"
         self.blocks = nn.ModuleList(
-            [TransformerBlock(cfg_model=cfg, cfg_block=cfg_transformer) for _ in range(cfg.num_blocks)]
+            [TransformerBlock( cfg_transformer_block=cfg_transformer_blocks[i]) for i in range(cfg.num_blocks)]
         )
-        self.logit_proj = PROJECTION_REGISTRY[cfg_transformer.projection_type](cfg.model_dim, cfg.vocab_size)
+
+        if not hasattr(cfg, "logit_projection_type"):
+            cfg.logit_projection_type = "custom_linear"
+
+        assert PROJECTION_REGISTRY[cfg.logit_projection_type] is not None, f"Projection type {cfg.logit_projection_type} not found in PROJECTION_REGISTRY"
+        self.logit_proj = PROJECTION_REGISTRY[cfg.logit_projection_type](cfg.model_dim, cfg.vocab_size)
+
         self.token_embeddings = nn.Embedding(cfg.vocab_size, cfg.model_dim)
-
         self.pos_emb_type = cfg.pos_emb_type
-
-        self.vocab_size = cfg.vocab_size
-        self.model_dim = cfg.model_dim
-
-
         #if no position embedding type is provided, use a learned embedding
         if cfg.pos_emb_type is None or cfg.pos_emb_type == "absolute":
             self.pos_emb = nn.Embedding(cfg.max_seq_length, cfg.model_dim)
